@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
+                             http://xmlns.jcp.org/xml/ns/javaee/web-app_4_0.xsd"
+         version="4.0">
+
+  <display-name>DigiQ - Digital Queue Management System</display-name>
+
+  <!-- Servlets, filters and the WebSocket endpoint are all declared with annotations. -->
+
+  <!--
+    Whether the sign-in page lists the seeded demo accounts and their shared
+    password.
+
+    Keep this false whenever anyone other than you can reach the application.
+    Registration is open to the public, so the sign-in page is public too - and
+    that box hands out the administrator password to every visitor, which would
+    make the role checks pointless.
+
+    Set it to true only for a local walkthrough or a recorded demo.
+  -->
+  <context-param>
+    <param-name>digiq.showDemoAccounts</param-name>
+    <param-value>false</param-value>
+  </context-param>
+
+  <session-config>
+    <session-timeout>60</session-timeout>
+    <cookie-config>
+      <http-only>true</http-only>
+    </cookie-config>
+    <tracking-mode>COOKIE</tracking-mode>
+  </session-config>
+
+  <error-page>
+    <error-code>404</error-code>
+    <location>/WEB-INF/views/error/404.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>403</error-code>
+    <location>/WEB-INF/views/error/403.jsp</location>
+  </error-page>
+  <error-page>
+    <error-code>500</error-code>
+    <location>/WEB-INF/views/error/500.jsp</location>
+  </error-page>
+  <error-page>
+    <exception-type>java.lang.Throwable</exception-type>
+    <location>/WEB-INF/views/error/500.jsp</location>
+  </error-page>
+
+  <!-- The context root is served by HomeServlet, so no welcome file is needed. -->
+  <welcome-file-list>
+    <welcome-file>index.html</welcome-file>
+  </welcome-file-list>
+
+</web-app>

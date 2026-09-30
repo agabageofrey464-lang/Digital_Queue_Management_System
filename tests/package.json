@@ -1,0 +1,17 @@
+{
+  "name": "digiq-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Verification suite for DigiQ. Drives the running application over HTTP and WebSocket.",
+  "scripts": {
+    "websocket": "node 02-websocket.js",
+    "features": "node 03-features.js",
+    "concurrency": "node 04-concurrency.js",
+    "locks": "node 05-lock-behaviour.js",
+    "static": "node static-check-imports.js && node static-check-el.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "mysql2": "^3.11.0"
+  }
+}
