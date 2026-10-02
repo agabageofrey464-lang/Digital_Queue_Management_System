@@ -8,6 +8,8 @@ package com.digiq.model;
  *      |                                 |
  *      |                                 +--(customer never showed)--&gt; NO_SHOW
  *      +--(customer cancels)--&gt; CANCELLED
+ *      |
+ *      +--(branch closed first)--&gt; EXPIRED
  * </pre>
  *
  * <p>Each constant carries its own display label and a "tone", which is the name
@@ -30,7 +32,15 @@ public enum TokenStatus {
     CANCELLED("Cancelled", "muted"),
 
     // Called, but the customer never presented. Terminal.
-    NO_SHOW("No Show", "critical");
+    NO_SHOW("No Show", "critical"),
+
+    // The branch closed before this token was reached. Terminal.
+    //
+    // Queues are per-day: callNext only ever considers tokens whose service_date
+    // is today. Without this state an unreached token keeps reporting "Waiting"
+    // forever while being permanently unservable, which is a lie to the customer.
+    // The nightly sweep in TokenDAO.expireStale() moves them here.
+    EXPIRED("Expired", "muted");
 
     // Shown on badges and in tables.
     private final String label;

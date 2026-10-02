@@ -9,7 +9,11 @@ import com.digiq.model.TokenStatus;
 import com.digiq.websocket.QueueBroadcaster;
 
 import java.sql.SQLException;
+// Used to decide whether the daily sweep has already run today.
+import java.time.LocalDate;
 import java.util.List;
+// Lets two concurrent requests race for the sweep without both performing it.
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The queue rules in one place.
@@ -23,6 +27,17 @@ public class QueueService {
 
     /** A customer this close to the front gets the "almost your turn" alert. */
     private static final int APPROACHING_THRESHOLD = 3;
+
+    /**
+     * The date the stale-token sweep last ran.
+     *
+     * <p>Static, so every request in this JVM shares one value, and an
+     * {@link AtomicReference} so two simultaneous first-requests-of-the-day cannot
+     * both decide to run it. A scheduled job would be tidier, but this needs no
+     * extra thread and no container-specific configuration, and the work is
+     * idempotent anyway - running it twice simply updates nothing the second time.</p>
+     */
+    private static final AtomicReference<LocalDate> LAST_SWEEP = new AtomicReference<>();
 
     private final TokenDAO tokenDAO = new TokenDAO();
     private final CounterDAO counterDAO = new CounterDAO();
@@ -80,6 +95,11 @@ public class QueueService {
         if (!counter.getStatus().canServe()) {
             return null;
         }
+
+        // Clear out anything left over from a previous day before pulling. The queue
+        // query already filters on today, so this does not change who is called - it
+        // keeps the counts and the customer's view honest.
+        sweepStaleTokens();
         Token token = tokenDAO.callNext(counter.getId(), counter.getServiceId(), staffId);
         if (token == null) {
             return null;
@@ -159,8 +179,44 @@ public class QueueService {
     //  Reads used by several screens
     // ------------------------------------------------------------------
 
+    /**
+     * Expires yesterday's unserved tokens, at most once per calendar day.
+     *
+     * <p>Called from the paths that would otherwise display a stale token as though
+     * it were still waiting, and once at startup. Cheap to call repeatedly: after
+     * the first run of the day it does nothing but compare two dates.</p>
+     *
+     * @return the number expired, or 0 when the sweep had already run today
+     */
+    public int sweepStaleTokens() throws SQLException {
+        // Server-local date. The sweep compares against CURDATE() in SQL, so a
+        // mismatched JVM timezone would at worst delay it by one request.
+        LocalDate today = LocalDate.now();
+
+        // What the last run recorded. Null on the very first call after a restart.
+        LocalDate previous = LAST_SWEEP.get();
+
+        // Already done today - the overwhelmingly common case.
+        if (today.equals(previous)) {
+            return 0;
+        }
+
+        // Claim the day atomically. If another thread got here first, its
+        // compareAndSet succeeded and ours fails, so only one of us does the work.
+        if (!LAST_SWEEP.compareAndSet(previous, today)) {
+            return 0;
+        }
+
+        // Safe to run even if it turns out there is nothing to expire.
+        return tokenDAO.expireStale();
+    }
+
     /** A customer's live tokens, each with its current queue position filled in. */
     public List<Token> activeTokensFor(int customerId) throws SQLException {
+        // Before reporting what is live, make sure nothing from a previous day is
+        // still masquerading as waiting.
+        sweepStaleTokens();
+
         List<Token> tokens = tokenDAO.findActiveByCustomer(customerId);
         for (Token token : tokens) {
             token.setPositionInQueue(tokenDAO.positionOf(token));

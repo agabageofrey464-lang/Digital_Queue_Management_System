@@ -63,7 +63,9 @@ CREATE TABLE tokens (
   service_id   INT NOT NULL,
   customer_id  INT NOT NULL,
   counter_id   INT NULL,
-  status       ENUM('PENDING','IN_SERVICE','COMPLETED','CANCELLED','NO_SHOW')
+  -- EXPIRED exists because queues are per-day: a token not reached before the
+  -- branch closed can never be called, so it must stop reporting as waiting.
+  status       ENUM('PENDING','IN_SERVICE','COMPLETED','CANCELLED','NO_SHOW','EXPIRED')
                NOT NULL DEFAULT 'PENDING',
   priority     TINYINT NOT NULL DEFAULT 0,
   service_date DATE NOT NULL,

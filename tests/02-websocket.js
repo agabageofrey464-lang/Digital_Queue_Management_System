@@ -73,19 +73,37 @@ async function login(email) {
     try { events.push(JSON.parse(d.toString())); } catch (e) { /* ignore */ }
   });
 
+  /*
+   * Waits for a matching event instead of sleeping a fixed amount.
+   *
+   * A flat `setTimeout(400)` made this suite flaky: it passed in isolation but
+   * failed in the full run, because the server had just restarted and the first
+   * reply took longer than the sleep. Polling until the event actually arrives
+   * removes the race rather than papering over it with a bigger number.
+   */
+  function waitFor(type, timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+    return new Promise((resolve) => {
+      (function poll() {
+        const hit = events.find(e => e.type === type);
+        if (hit) return resolve(hit);
+        if (Date.now() > deadline) return resolve(null);
+        setTimeout(poll, 25);
+      }());
+    });
+  }
+
   try { await opened; pass('WebSocket connected to /ws/queue'); }
   catch (e) { return fail('WebSocket connect: ' + e.message); }
 
-  await new Promise(r => setTimeout(r, 400));
-  const hello = events.find(e => e.type === 'CONNECTED');
+  const hello = await waitFor('CONNECTED');
   if (hello) pass('received CONNECTED handshake (clients=' + hello.payload.clients + ')');
   else fail('no CONNECTED handshake');
 
   // 3. ping/pong keepalive
   events.length = 0;
   ws.send('ping');
-  await new Promise(r => setTimeout(r, 400));
-  if (events.find(e => e.type === 'PONG')) pass('ping -> PONG keepalive works');
+  if (await waitFor('PONG')) pass('ping -> PONG keepalive works');
   else fail('no PONG reply');
 
   // 4. Booking a token must broadcast TOKEN_ISSUED
@@ -96,8 +114,7 @@ async function login(email) {
   });
   const bookedUrl = bookRes.url;
   const tokenId = (bookedUrl.match(/id=(\d+)/) || [])[1];
-  await new Promise(r => setTimeout(r, 600));
-  const issued = events.find(e => e.type === 'TOKEN_ISSUED');
+  const issued = await waitFor('TOKEN_ISSUED');
   if (issued) pass('TOKEN_ISSUED broadcast: ' + issued.payload.token.tokenNumber +
                    ' (waiting=' + issued.payload.waiting + ')');
   else fail('no TOKEN_ISSUED event');
@@ -111,13 +128,12 @@ async function login(email) {
     body: new URLSearchParams({ action: 'call' }).toString()
   });
   const callJson = await callRes.json();
-  await new Promise(r => setTimeout(r, 600));
-  const called = events.find(e => e.type === 'TOKEN_CALLED');
+  const called = await waitFor('TOKEN_CALLED');
   if (called) pass('TOKEN_CALLED broadcast: ' + called.payload.token.tokenNumber +
                    ' -> ' + called.payload.counterName);
   else fail('no TOKEN_CALLED event (call said: ' + JSON.stringify(callJson) + ')');
 
-  const qc = events.find(e => e.type === 'QUEUE_CHANGED');
+  const qc = await waitFor('QUEUE_CHANGED');
   if (qc) pass('QUEUE_CHANGED broadcast for service ' + qc.payload.serviceId);
   else fail('no QUEUE_CHANGED event');
 
@@ -134,8 +150,7 @@ async function login(email) {
     method: 'POST', json: true,
     body: new URLSearchParams({ action: 'complete' }).toString()
   });
-  await new Promise(r => setTimeout(r, 600));
-  const upd = events.find(e => e.type === 'TOKEN_UPDATED');
+  const upd = await waitFor('TOKEN_UPDATED');
   if (upd) pass('TOKEN_UPDATED broadcast: ' + upd.payload.token.tokenNumber +
                 ' -> ' + upd.payload.token.status);
   else fail('no TOKEN_UPDATED event');

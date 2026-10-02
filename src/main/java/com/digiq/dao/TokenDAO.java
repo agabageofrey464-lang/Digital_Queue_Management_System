@@ -421,6 +421,59 @@ public class TokenDAO {
         }
     }
 
+    /**
+     * Closes out tokens left unserved when the branch shut.
+     *
+     * <p>The queue is per-day - {@link #callNext} only ever looks at today - so a
+     * token still PENDING from an earlier date can never be reached. Left alone it
+     * keeps telling the customer "Waiting" forever, and shows up in their history as
+     * though it were still live. This moves every such row to EXPIRED and records
+     * the reason in the audit trail.</p>
+     *
+     * <p>IN_SERVICE is swept too: that is a token a counter called and then never
+     * closed out before going home.</p>
+     *
+     * @return how many tokens were expired
+     */
+    public int expireStale() throws SQLException {
+        // One connection for both statements so the log rows and the status change
+        // commit together - a half-applied sweep would leave the trail wrong.
+        Connection c = null;
+        try {
+            c = Database.getConnection();
+            c.setAutoCommit(false);
+
+            // Write the audit rows FIRST, while the tokens still carry their old
+            // status - afterwards there would be no way to record what they were.
+            String log = "INSERT INTO service_logs (token_id, counter_id, staff_id, action, "
+                    + "from_status, to_status, note) "
+                    + "SELECT id, counter_id, NULL, 'EXPIRED', status, 'EXPIRED', "
+                    + "       'Branch closed before this token was reached' "
+                    + "FROM tokens "
+                    + "WHERE status IN ('PENDING','IN_SERVICE') AND service_date < CURDATE()";
+            try (PreparedStatement ps = c.prepareStatement(log)) {
+                ps.executeUpdate();
+            }
+
+            // Now flip the tokens themselves.
+            String update = "UPDATE tokens SET status = 'EXPIRED' "
+                    + "WHERE status IN ('PENDING','IN_SERVICE') AND service_date < CURDATE()";
+            int expired;
+            try (PreparedStatement ps = c.prepareStatement(update)) {
+                expired = ps.executeUpdate();
+            }
+
+            c.commit();
+            return expired;
+
+        } catch (SQLException ex) {
+            rollback(c);
+            throw ex;
+        } finally {
+            close(c);
+        }
+    }
+
     public int countWaiting(int serviceId) throws SQLException {
         String sql = "SELECT COUNT(*) FROM tokens WHERE service_date = CURDATE() AND status = 'PENDING'"
                 + (serviceId > 0 ? " AND service_id = ?" : "");

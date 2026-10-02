@@ -82,6 +82,17 @@
                 <td><span class="badge badge--${t.status.tone}">${t.status.label}</span></td>
                 <td class="num nowrap">
                   <a class="btn btn--sm btn--ghost" href="${ctx}/customer/token?id=${t.id}">Open</a>
+                  <%-- Cancelling straight from the list saves opening the ticket first.
+                       Testing for PENDING alone is now sufficient: the daily sweep moves
+                       any unreached token from an earlier day to EXPIRED, so a PENDING
+                       row here is always one that is genuinely still in today's queue. --%>
+                  <c:if test="${t.status == 'PENDING'}">
+                    <form method="post" action="${ctx}/customer/cancel" style="display:inline;"
+                          data-confirm="Cancel token ${t.tokenNumber}? You will lose your place in the queue.">
+                      <input type="hidden" name="tokenId" value="${t.id}">
+                      <button class="btn btn--sm btn--ghost" type="submit">Cancel</button>
+                    </form>
+                  </c:if>
                 </td>
               </tr>
             </c:forEach>

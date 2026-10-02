@@ -1,5 +1,8 @@
 package com.digiq.config;
 
+// Runs the startup sweep that closes out unserved tokens from previous days.
+import com.digiq.service.QueueService;
+
 import javax.servlet.ServletContext;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
@@ -24,6 +27,15 @@ public class AppContextListener implements ServletContextListener {
         sce.getServletContext().setAttribute("appTagline", "Digital Queue Management System");
         try (Connection c = Database.getConnection()) {
             sce.getServletContext().log("DigiQ: database pool ready (" + c.getMetaData().getURL() + ")");
+
+            // Close out anything the branch left unserved. Doing it at startup means a
+            // server restarted each morning tidies yesterday's queue before the first
+            // customer ever loads a page.
+            int expired = new QueueService().sweepStaleTokens();
+            if (expired > 0) {
+                sce.getServletContext().log("DigiQ: expired " + expired + " unserved token(s) from previous days");
+            }
+
         } catch (SQLException ex) {
             sce.getServletContext().log(
                     "DigiQ: DATABASE UNAVAILABLE - check src/main/resources/db.properties. " + ex.getMessage(), ex);
